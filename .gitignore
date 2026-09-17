@@ -1,0 +1,24 @@
+@"
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Chrome Extension
+*.crx
+*.pem
+.DS_Store
+
+# Nextera Config
+.nextera/
+*.log
+
+# Node
+node_modules/
+.next/
+
+# OS
+Thumbs.db
+"@ | Out-File -Encoding UTF8 ".gitignore"

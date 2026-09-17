@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Nextera Settings</title>
+  <link rel="stylesheet" href="settings.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Nextera Settings</h1>
+      <p class="subtitle">Configure your API keys for AI-powered automation</p>
+    </header>
+
+    <!-- Groq (Primary) -->
+    <div class="section">
+      <div class="section-header">
+        <h2>Groq</h2>
+        <span class="badge primary-badge">PRIMARY</span>
+      </div>
+      <p class="desc">14,400 requests/day free. Fast and reliable.</p>
+
+      <label for="groq-key">API Key</label>
+      <input type="password" id="groq-key" placeholder="gsk_..." autocomplete="off" />
+
+      <label for="groq-model">Model</label>
+      <select id="groq-model">
+        <option value="openai/gpt-oss-20b">GPT OSS 20B (faster, less rate-limited)</option>
+        <option value="openai/gpt-oss-120b">GPT OSS 120B (smarter)</option>
+      </select>
+    </div>
+
+    <!-- Gemini (Fallback) -->
+    <div class="section">
+      <div class="section-header">
+        <h2>Gemini</h2>
+        <span class="badge fallback-badge">FALLBACK</span>
+      </div>
+      <p class="desc">20 requests/day free. Requires AIza format key.</p>
+
+      <label for="gemini-key">API Key</label>
+      <input type="password" id="gemini-key" placeholder="AIzaSy..." autocomplete="off" />
+
+      <label for="gemini-model">Model</label>
+      <select id="gemini-model">
+        <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+        <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
+        <option value="gemini-3.6-flash">Gemini 3.6 Flash</option>
+      </select>
+    </div>
+
+    <!-- Actions -->
+    <div class="actions">
+      <button id="save-btn" class="btn primary">Save Settings</button>
+      <button id="reset-btn" class="btn secondary">Reset</button>
+    </div>
+
+    <div id="status" class="status hidden"></div>
+
+    <footer>
+      <span>Made by <strong>Shailendra Meghwal</strong></span>
+      <a href="https://github.com/shailey07" target="_blank">github.com/shailey07</a>
+    </footer>
+  </div>
+  <script src="settings.js"></script>
+</body>
+</html>

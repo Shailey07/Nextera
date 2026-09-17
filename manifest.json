@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Nextera",
+  "version": "3.0.0",
+  "description": "Coursera courses complete karo - videos, readings, quizzes, graded assignments, discussions.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs",
+    "nativeMessaging"
+  ],
+  "host_permissions": [
+    "*://*.coursera.org/*"
+  ],
+  "background": {
+    "service_worker": "scripts/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "settings/settings.html",
+  "commands": {
+    "auto-complete": {
+      "suggested_key": {
+        "default": "Alt+A",
+        "mac": "Command+Shift+A"
+      },
+      "description": "Auto-complete entire course"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
