@@ -23,13 +23,14 @@
       <span id="status-text">Ready</span>
     </div>
 
-    <!-- Main Actions -->
+    <!-- Main Actions (2 columns) -->
     <div class="grid-main">
-      <button id="btn-complete" class="btn primary">
+      <button id="btn-current-quiz" class="btn primary">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          <path d="M9 11l3 3L22 4"></path>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
         </svg>
-        <span>Complete Course</span>
+        <span>Complete This Quiz</span>
       </button>
       <button id="btn-llm" class="btn secondary">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -40,6 +41,14 @@
         <span>Solve with AI</span>
       </button>
     </div>
+
+    <!-- Complete Course (full width) -->
+    <button id="btn-complete" class="btn primary full-width">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+      </svg>
+      <span>Complete Course</span>
+    </button>
 
     <!-- Individual Sections -->
     <div class="section-label">Individual Sections</div>

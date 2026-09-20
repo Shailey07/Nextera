@@ -4,11 +4,11 @@ const statusBox = document.getElementById('status-box');
 const progressBar = document.getElementById('progress-bar');
 const btnComplete = document.getElementById('btn-complete');
 const btnLLM = document.getElementById('btn-llm');
+const btnCurrentQuiz = document.getElementById('btn-current-quiz');
 const btnStop = document.getElementById('btn-stop');
 const currentItemEl = document.getElementById('current-item');
 const currentItemText = document.getElementById('current-item-text');
 
-// Section buttons
 const btnVideos = document.getElementById('btn-videos');
 const btnReadings = document.getElementById('btn-readings');
 const btnQuizzes = document.getElementById('btn-quizzes');
@@ -19,10 +19,6 @@ const btnShareLink = document.getElementById('btn-share-link');
 let pollInterval = null;
 let shownLogCount = 0;
 let isRunning = false;
-
-// ============================================
-// UI HELPERS
-// ============================================
 
 function addLog(message, type = 'info') {
   const entry = document.createElement('div');
@@ -41,7 +37,8 @@ function setStatus(text, state = 'ready') {
 
 function setRunningUI(running) {
   isRunning = running;
-  const allBtns = [btnComplete, btnLLM, btnVideos, btnReadings, btnQuizzes, btnGraded, btnDiscussions, btnShareLink];
+  const allBtns = [btnComplete, btnLLM, btnCurrentQuiz, btnVideos, btnReadings,
+                   btnQuizzes, btnGraded, btnDiscussions, btnShareLink];
   allBtns.forEach(btn => { if (btn) btn.disabled = running; });
 
   if (running) {
@@ -54,10 +51,6 @@ function setRunningUI(running) {
   }
 }
 
-// ============================================
-// GET COURSE SLUG
-// ============================================
-
 async function getCourseSlug() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.url?.includes('coursera.org')) return null;
@@ -65,16 +58,18 @@ async function getCourseSlug() {
   return match ? match[1] : null;
 }
 
-// ============================================
-// RUN NEXTERA (generic)
-// ============================================
-
 async function runNextera(mode) {
   if (isRunning) return;
 
-  const slug = await getCourseSlug();
-  if (!slug) {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.url?.includes('coursera.org')) {
     setStatus('Coursera course kholo', 'error');
+    return;
+  }
+  const match = tab.url.match(/\/learn\/([^\/]+)/);
+  const slug = match ? match[1] : null;
+  if (!slug) {
+    setStatus('Course slug not found', 'error');
     return;
   }
 
@@ -89,7 +84,8 @@ async function runNextera(mode) {
     const response = await chrome.runtime.sendMessage({
       action: 'runSkipera',
       slug,
-      mode
+      mode,
+      currentUrl: tab.url
     });
 
     if (response?.error) {
@@ -108,10 +104,6 @@ async function runNextera(mode) {
     setRunningUI(false);
   }
 }
-
-// ============================================
-// POLL PROGRESS
-// ============================================
 
 function pollProgress() {
   if (pollInterval) clearInterval(pollInterval);
@@ -135,17 +127,13 @@ function pollProgress() {
     if (done) {
       clearInterval(pollInterval);
       pollInterval = null;
-      setStatus('Complete! ✓', 'ready');
+      setStatus('Complete!', 'ready');
       progressBar.style.width = '100%';
       setRunningUI(false);
       await chrome.storage.local.remove(['progress', 'logs', 'done']);
     }
   }, 1000);
 }
-
-// ============================================
-// STOP
-// ============================================
 
 btnStop.addEventListener('click', async () => {
   setStatus('Stopping...', 'error');
@@ -162,15 +150,10 @@ btnStop.addEventListener('click', async () => {
   }
 });
 
-// ============================================
-// EVENT LISTENERS
-// ============================================
-
-// Main actions
 btnComplete.addEventListener('click', () => runNextera('complete'));
 btnLLM.addEventListener('click', () => runNextera('llm'));
+btnCurrentQuiz.addEventListener('click', () => runNextera('current'));
 
-// Individual sections
 btnVideos.addEventListener('click', () => runNextera('videos'));
 btnReadings.addEventListener('click', () => runNextera('readings'));
 btnQuizzes.addEventListener('click', () => runNextera('quizzes'));
@@ -178,17 +161,14 @@ btnGraded.addEventListener('click', () => runNextera('graded'));
 btnDiscussions.addEventListener('click', () => runNextera('discussions'));
 btnShareLink.addEventListener('click', () => runNextera('sharelink'));
 
-// Settings
 document.getElementById('settings-btn').addEventListener('click', () => {
   chrome.runtime.openOptionsPage();
 });
 
-// Cleanup
 window.addEventListener('unload', () => {
   if (pollInterval) clearInterval(pollInterval);
 });
 
-// Auto-check
 getCourseSlug().then(slug => {
   if (!slug) setStatus('Coursera course kholo', 'error');
 });

@@ -16,28 +16,22 @@ if _native_dir not in sys.path:
 from nextera.main import Nextera
 from loguru import logger
 
-# Setup logging to stderr (Chrome captures this)
 logger.remove()
 logger.add(sys.stderr, level="INFO")
 
 
 def read_message():
-    """Read message from Chrome (Native Messaging protocol)"""
     raw_length = sys.stdin.buffer.read(4)
     if not raw_length or len(raw_length) < 4:
         return None
-
     length = struct.unpack('=I', raw_length)[0]
-
     if length > 64 * 1024 * 1024:
         return None
-
     message = sys.stdin.buffer.read(length).decode('utf-8')
     return json.loads(message)
 
 
 def send_message(message):
-    """Send message to Chrome"""
     encoded = json.dumps(message).encode('utf-8')
     sys.stdout.buffer.write(struct.pack('=I', len(encoded)))
     sys.stdout.buffer.write(encoded)
@@ -63,24 +57,24 @@ class ChromeLogger:
         log_to_chrome(str(msg), "error")
 
 
+def _load_config_file():
+    config_dir = Path.home() / ".nextera"
+    config_file = config_dir / "config.json"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    if config_file.exists():
+        try:
+            return json.loads(config_file.read_text()), config_file
+        except Exception:
+            pass
+    return {"cookies": {}}, config_file
+
+
 def sync_keys_to_config(keys: dict) -> bool:
-    """Merge API keys into ~/.nextera/config.json"""
     try:
-        config_dir = Path.home() / ".nextera"
-        config_file = config_dir / "config.json"
-
-        config_dir.mkdir(parents=True, exist_ok=True)
-
-        if config_file.exists():
-            cfg = json.loads(config_file.read_text())
-        else:
-            cfg = {"cookies": {}}
-
-        # Merge keys (don't overwrite cookies)
+        cfg, config_file = _load_config_file()
         for k, v in keys.items():
             if v:
                 cfg[k] = v
-
         config_file.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
         return True
     except Exception as e:
@@ -88,8 +82,31 @@ def sync_keys_to_config(keys: dict) -> bool:
         return False
 
 
+def sync_cookies_to_config(cookies: dict) -> bool:
+    try:
+        cfg, config_file = _load_config_file()
+        if "cookies" not in cfg:
+            cfg["cookies"] = {}
+        cfg["cookies"].update(cookies)
+        config_file.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
+        log_to_chrome(f"Cookies saved: {', '.join(cookies.keys())}", "success")
+        return True
+    except Exception as e:
+        log_to_chrome(f"sync_cookies_to_config error: {e}", "error")
+        return False
+
+
+def fetch_cookies_from_browser() -> dict:
+    try:
+        from nextera.config import fetch_browser_cookies
+        cookies = fetch_browser_cookies()
+        return cookies or {}
+    except Exception as e:
+        log_to_chrome(f"fetch_cookies error: {e}", "error")
+        return {}
+
+
 def main():
-    # Monkey-patch nextera's logger
     import nextera.main
     nextera.main.logger = ChromeLogger()
     import nextera.watcher.watch
@@ -106,16 +123,18 @@ def main():
 
         action = message.get("action")
 
-        # ============ RUN ============
         if action == "run":
             slug = message.get("slug")
             mode = message.get("mode", "complete")
+            current_url = message.get("currentUrl", "")
 
             log_to_chrome(f"Starting nextera for: {slug} (mode: {mode})", "info")
+            if current_url:
+                log_to_chrome(f"URL: {current_url[:80]}", "info")
 
             try:
-                use_llm = mode in ("llm", "quizzes", "graded", "discussions")
-                nextera = Nextera(slug, use_llm, mode=mode)
+                use_llm = mode in ("llm", "quizzes", "graded", "discussions", "current")
+                nextera = Nextera(slug, use_llm, mode=mode, current_url=current_url)
                 nextera.get_course()
                 log_to_chrome("Course completed!", "success")
                 send_message({"type": "done"})
@@ -123,7 +142,6 @@ def main():
                 log_to_chrome(f"Error: {str(e)}", "error")
                 send_message({"type": "done"})
 
-        # ============ SYNC KEYS ============
         elif action == "sync_keys":
             keys = message.get("keys", {})
             if sync_keys_to_config(keys):
@@ -131,6 +149,32 @@ def main():
             else:
                 log_to_chrome("Failed to sync API keys", "error")
             send_message({"type": "keys_synced"})
+
+        elif action == "sync_cookies":
+            cookies = message.get("cookies", {})
+            if sync_cookies_to_config(cookies):
+                log_to_chrome("Cookies synced to config.json", "success")
+            else:
+                log_to_chrome("Failed to sync cookies", "error")
+            send_message({"type": "cookies_synced"})
+
+        elif action == "fetch_cookies":
+            cookies = fetch_cookies_from_browser()
+            if cookies:
+                sync_cookies_to_config(cookies)
+                log_to_chrome(f"Fetched {len(cookies)} cookies from browser", "success")
+                send_message({"type": "cookies_fetched", "cookies": cookies})
+            else:
+                log_to_chrome("No cookies found in browser. Manually paste karo.", "error")
+                send_message({"type": "cookies_fetched", "cookies": {}})
+
+        elif action == "get_cache_stats":
+            try:
+                from nextera.assessment.cache import get_cache_count
+                count = get_cache_count()
+                send_message({"type": "cache_stats", "count": count})
+            except Exception as e:
+                send_message({"type": "cache_stats", "count": 0, "error": str(e)})
 
 
 if __name__ == "__main__":

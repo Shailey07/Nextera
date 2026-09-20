@@ -12,7 +12,7 @@ from .session_utils import get_csrf_headers, random_delay
 
 
 class Nextera(object):
-    def __init__(self, course: str, llm: bool, mode: str = "complete"):
+    def __init__(self, course: str, llm: bool, mode: str = "complete", current_url: str = ""):
         self.user_id = None
         self.course_id = None
         self.base_url = BASE_URL
@@ -22,6 +22,7 @@ class Nextera(object):
         self.course = course
         self.llm = llm
         self.mode = mode
+        self.current_url = current_url
         self.failed_items = set()
         if not self.get_userid():
             self.refresh_cookies()
@@ -55,9 +56,12 @@ class Nextera(object):
         return True
 
     def get_course(self) -> None:
-        # Special mode: shareable link (doesn't need course materials)
         if self.mode == "sharelink":
             self.generate_share_link()
+            return
+
+        if self.mode == "current":
+            self.solve_current_quiz()
             return
 
         r = self.get_course_materials()
@@ -97,31 +101,124 @@ class Nextera(object):
         return r.json()
 
     def _get_skip_types(self) -> set:
-        """Return SKIP_TYPES based on mode."""
         ALL = {"lecture", "supplement", "ungradedAssignment",
                "staffGraded", "discussionPrompt", "phasedPeer",
                "coach", "ungradedWidget", "ungradedLti"}
 
         if self.mode == "complete":
-            # Videos + readings only
             return ALL - {"lecture", "supplement"}
+        elif self.mode == "llm":
+            return ALL - {"ungradedAssignment", "staffGraded", "discussionPrompt"}
         elif self.mode == "videos":
             return ALL - {"lecture"}
         elif self.mode == "readings":
             return ALL - {"supplement"}
         elif self.mode == "quizzes":
-            # Practice quizzes only (ungradedAssignment)
             return ALL - {"ungradedAssignment"}
         elif self.mode == "graded":
-            # Staff graded assignments only
             return ALL - {"staffGraded", "ungradedAssignment"}
         elif self.mode == "discussions":
             return ALL - {"discussionPrompt"}
-        elif self.mode == "llm":
-            # Everything except peer-graded
-            return {"phasedPeer", "discussionPrompt"}
+        elif self.mode == "sharelink":
+            return ALL
+        elif self.mode == "current":
+            return ALL
         else:
             return {"phasedPeer"}
+
+    def _extract_slug_from_url(self, url: str) -> str | None:
+        """
+        Extract item slug from various Coursera URL formats:
+          /learn/<course>/quiz/<slug>/...
+          /learn/<course>/assignment/<slug>/...
+          /learn/<course>/assignment-submission/<sub>/<slug>/...
+          /learn/<course>/exam/<slug>/...
+          /learn/<course>/supplement/<slug>/...
+        """
+        if not url:
+            return None
+
+        url = url.split("?")[0].split("#")[0]
+        parts = [p for p in url.split("/") if p]
+
+        try:
+            learn_idx = parts.index("learn")
+        except ValueError:
+            return None
+
+        if learn_idx + 2 >= len(parts):
+            return None
+
+        keywords = ("quiz", "assignment", "assignment-submission",
+                    "exam", "supplement", "lecture", "reading")
+
+        for i in range(learn_idx + 2, len(parts)):
+            if parts[i] in keywords:
+                if parts[i] == "assignment-submission":
+                    if i + 2 < len(parts):
+                        return parts[i + 2]
+                    elif i + 1 < len(parts):
+                        return parts[i + 1]
+                else:
+                    if i + 1 < len(parts):
+                        return parts[i + 1]
+
+        return None
+
+    def solve_current_quiz(self) -> None:
+        """Solve only the currently-open quiz OR assignment in browser."""
+        logger.info("=" * 60)
+        logger.info("CURRENT QUIZ MODE")
+        logger.info(f"Current URL: {self.current_url}")
+        logger.info("=" * 60)
+
+        item_slug = self._extract_slug_from_url(self.current_url)
+        logger.info(f"Parsed item slug: {item_slug}")
+
+        r = self.get_course_materials()
+        self.course_id = r["elements"][0]["id"]
+        all_items = r["linked"]["onDemandCourseMaterialItems.v2"]
+        logger.info(f"Course ID: {self.course_id}")
+        logger.info(f"Total items in course: {len(all_items)}")
+
+        target_item = None
+        if item_slug:
+            for item in all_items:
+                if item.get("slug") == item_slug:
+                    target_item = item
+                    logger.info(f"Exact match: {item['name']} ({item['contentSummary']['typeName']})")
+                    break
+
+            if not target_item:
+                for item in all_items:
+                    item_slug_field = item.get("slug") or ""
+                    if item_slug in item_slug_field or item_slug_field in item_slug:
+                        target_item = item
+                        logger.info(f"Fuzzy match: {item['name']} ({item['contentSummary']['typeName']})")
+                        break
+
+        if not target_item:
+            logger.warning("No slug match — trying fallback")
+            completed = self.get_completed_items()
+            assignment_types = {"ungradedAssignment", "staffGraded"}
+            for item in all_items:
+                if item["contentSummary"]["typeName"] in assignment_types \
+                        and item["id"] not in completed:
+                    target_item = item
+                    logger.info(f"Fallback match: {item['name']} ({item['contentSummary']['typeName']})")
+                    break
+
+        if not target_item:
+            logger.error("FOUND NO ASSIGNMENT/QUIZ TO SOLVE")
+            return
+
+        item_type = target_item["contentSummary"]["typeName"]
+        logger.info(f"TARGET: [{item_type}] {target_item['name']}")
+        logger.info(f"Item ID: {target_item['id']}")
+
+        GradedSolver(
+            self.session, self.course_id, target_item["id"]
+        ).solve_current()
 
     def process_items(self, all_items: list[dict]) -> None:
         total = len(all_items)
@@ -136,8 +233,7 @@ class Nextera(object):
         while True:
             iteration_count += 1
             if iteration_count > max_iterations:
-                logger.warning(
-                    f"Max iterations ({max_iterations}) reached. Stopping to avoid infinite loop.")
+                logger.warning(f"Max iterations ({max_iterations}) reached.")
                 break
 
             completed = self.get_completed_items()
@@ -178,7 +274,6 @@ class Nextera(object):
                 )
                 break
 
-            # Separate assignment/discussion items (sequential) from others (concurrent)
             sequential_types = {"discussionPrompt", "ungradedAssignment",
                                 "staffGraded", "phasedPeer"}
 
@@ -203,8 +298,7 @@ class Nextera(object):
                             if not success:
                                 self.failed_items.add(item["id"])
                         except Exception as e:
-                            logger.exception(
-                                f"Error in processing item: {e}")
+                            logger.exception(f"Error in processing item: {e}")
                             self.failed_items.add(item["id"])
                 continue
 
@@ -247,16 +341,13 @@ class Nextera(object):
             success = self.ungraded_lti_item(item_id)
         else:
             logger.warning(
-                f"[module:{module_id}] [item:{item_id}] Unknown/skipped item type: {item_type} - skipping.")
+                f"[module:{module_id}] [item:{item_id}] Unknown/skipped type: {item_type}")
 
         return success
 
     def generate_share_link(self) -> None:
-        """Generate shareable link for current assignment submission."""
-        logger.info("Generating shareable link...")
-        logger.info("Ye feature browser extension ke through kaam karta hai.")
-        logger.info("Chrome mein Coursera assignment submission page kholo, phir 'Shareable Link' button dabao.")
-        # Note: actual share link generation happens in content.js/browser
+        logger.info("Shareable link feature browser extension ke through kaam karta hai.")
+        logger.info("Chrome mein assignment submission page kholo, phir 'Shareable Link' button dabao.")
 
     def get_completed_items(self) -> set[str]:
         r = self.session.get(
@@ -267,13 +358,11 @@ class Nextera(object):
 
         if r.status_code != 200:
             logger.debug("Could not fetch course progress.")
-            logger.debug(r.text)
             return set()
 
         data = r.json()
         elements = data.get("elements") or []
         if not elements:
-            logger.debug("Course progress response has no elements.")
             return set()
 
         items = elements[0].get("items", {})
@@ -313,8 +402,7 @@ class Nextera(object):
             params={"fields": "session,sessionId"}
         )
         if r.status_code != 200:
-            logger.error(
-                f"Failed to get session for widget {item_id}: {r.status_code}")
+            logger.error(f"Failed to get session for widget {item_id}")
             return False
 
         try:
@@ -351,10 +439,12 @@ class Nextera(object):
 @click.command()
 @click.argument('slug')
 @click.option('--llm', is_flag=True, help="Whether to use an LLM to solve graded assignments.")
-@click.option('--mode', default='complete', help="Mode: complete, llm, videos, readings, quizzes, graded, discussions, sharelink")
+@click.option('--mode', default='complete',
+              help="Mode: complete, llm, videos, readings, quizzes, graded, discussions, sharelink, current")
 def main(slug: str, llm: bool, mode: str) -> None:
     nextera = Nextera(slug, llm, mode=mode)
     nextera.get_course()
+
 
 if __name__ == '__main__':
     main()

@@ -10,7 +10,7 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 DEFAULT_CONFIG = {
     "cookies": {},
     "groq_api_key": "",
-    "groq_model": "openai/gpt-oss-20b",
+    "groq_model": "openai/gpt-oss-120b",     # ← 120B default
     "gemini_api_key": "",
     "gemini_model": "gemini-2.5-flash",
     "perplexity_api_key": "",
@@ -68,24 +68,19 @@ def load_config() -> dict:
 
 _config = load_config()
 
-# URLs (constant, not user-configurable)
 BASE_URL = "https://www.coursera.org/api/"
 GRAPHQL_URL = "https://www.coursera.org/graphql-gateway"
 PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions"
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-# User-configurable
 COOKIES = _config["cookies"]
 
-# Groq is PRIMARY
 GROQ_API_KEY = _config.get("groq_api_key", "")
-GROQ_MODEL = _config.get("groq_model", "openai/gpt-oss-20b")
+GROQ_MODEL = _config.get("groq_model", "openai/gpt-oss-120b")
 
-# Gemini is fallback
 GEMINI_API_KEY = _config.get("gemini_api_key", "")
 GEMINI_MODEL = _config.get("gemini_model", "gemini-2.5-flash")
 
-# Perplexity is deprecated
 PERPLEXITY_API_KEY = ""
 PERPLEXITY_MODEL = _config.get("perplexity_model", "sonar-pro")
 

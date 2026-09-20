@@ -9,28 +9,53 @@
   <div class="container">
     <header>
       <h1>Nextera Settings</h1>
-      <p class="subtitle">Configure your API keys for AI-powered automation</p>
+      <p class="subtitle">Configure API keys and Coursera cookies</p>
     </header>
 
-    <!-- Groq (Primary) -->
+    <!-- Cookies -->
+    <div class="section">
+      <div class="section-header">
+        <h2>Coursera Cookies</h2>
+        <span class="badge primary-badge">REQUIRED</span>
+      </div>
+      <p class="desc">
+        Session expire ho jaye toh Chrome DevTools (F12 → Application → Cookies → coursera.org) se fresh cookies copy karke yahan paste karo.
+      </p>
+
+      <label for="cookie-cauth">CAUTH <span style="color:#666; font-weight:400;">(longest value)</span></label>
+      <input type="password" id="cookie-cauth" placeholder="crrNbRS2ds20zuax0bwIaFH..." autocomplete="off" />
+
+      <label for="cookie-csrf">CSRF3-Token</label>
+      <input type="text" id="cookie-csrf" placeholder="1758542800.YIQXP5QpEqEjSPLy" autocomplete="off" />
+
+      <label for="cookie-204u">__204u</label>
+      <input type="text" id="cookie-204u" placeholder="5581121343-1757678800427" autocomplete="off" />
+
+      <div class="actions">
+        <button id="save-cookies-btn" class="btn primary">Save Cookies</button>
+        <button id="refresh-cookies-btn" class="btn secondary">Auto-Fetch</button>
+      </div>
+    </div>
+
+    <!-- Groq -->
     <div class="section">
       <div class="section-header">
         <h2>Groq</h2>
         <span class="badge primary-badge">PRIMARY</span>
       </div>
-      <p class="desc">14,400 requests/day free. Fast and reliable.</p>
+      <p class="desc">14,400 requests/day free. 120B model recommended for accuracy.</p>
 
       <label for="groq-key">API Key</label>
       <input type="password" id="groq-key" placeholder="gsk_..." autocomplete="off" />
 
       <label for="groq-model">Model</label>
       <select id="groq-model">
-        <option value="openai/gpt-oss-20b">GPT OSS 20B (faster, less rate-limited)</option>
-        <option value="openai/gpt-oss-120b">GPT OSS 120B (smarter)</option>
+        <option value="openai/gpt-oss-120b">GPT OSS 120B (recommended — most accurate)</option>
+        <option value="openai/gpt-oss-20b">GPT OSS 20B (faster, less accurate)</option>
       </select>
     </div>
 
-    <!-- Gemini (Fallback) -->
+    <!-- Gemini -->
     <div class="section">
       <div class="section-header">
         <h2>Gemini</h2>

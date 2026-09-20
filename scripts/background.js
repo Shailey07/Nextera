@@ -21,7 +21,6 @@ function connectNative() {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  // ============ RUN ============
   if (msg.action === 'runSkipera') {
     if (isRunning) {
       sendResponse({ error: 'Already running. Wait for it to finish.' });
@@ -43,7 +42,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     port.postMessage({
       action: 'run',
       slug: msg.slug,
-      mode: msg.mode
+      mode: msg.mode,
+      currentUrl: msg.currentUrl || ''
     });
 
     port.onMessage.addListener((response) => {
@@ -69,7 +69,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  // ============ STOP ============
   if (msg.action === 'stopSkipera') {
     if (nativePort) {
       try { nativePort.disconnect(); } catch (e) {}
@@ -82,7 +81,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  // ============ SYNC KEYS ============
   if (msg.action === 'syncKeys') {
     const port = connectNative();
     if (!port) {
@@ -103,6 +101,69 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     port.onMessage.addListener((response) => {
       if (response.type === 'keys_synced') {
         sendResponse({ ok: true });
+        port.disconnect();
+        nativePort = null;
+      }
+    });
+
+    return true;
+  }
+
+  if (msg.action === 'syncCookies') {
+    const port = connectNative();
+    if (!port) {
+      sendResponse({ error: 'Native host not installed.' });
+      return true;
+    }
+
+    port.postMessage({
+      action: 'sync_cookies',
+      cookies: msg.cookies
+    });
+
+    port.onMessage.addListener((response) => {
+      if (response.type === 'cookies_synced') {
+        sendResponse({ ok: true });
+        port.disconnect();
+        nativePort = null;
+      }
+    });
+
+    return true;
+  }
+
+  if (msg.action === 'fetchCookies') {
+    const port = connectNative();
+    if (!port) {
+      sendResponse({ error: 'Native host not installed.' });
+      return true;
+    }
+
+    port.postMessage({ action: 'fetch_cookies' });
+
+    port.onMessage.addListener((response) => {
+      if (response.type === 'cookies_fetched') {
+        sendResponse({ cookies: response.cookies });
+        port.disconnect();
+        nativePort = null;
+      }
+    });
+
+    return true;
+  }
+
+  if (msg.action === 'getCacheStats') {
+    const port = connectNative();
+    if (!port) {
+      sendResponse({ count: 0 });
+      return true;
+    }
+
+    port.postMessage({ action: 'get_cache_stats' });
+
+    port.onMessage.addListener((response) => {
+      if (response.type === 'cache_stats') {
+        sendResponse({ count: response.count });
         port.disconnect();
         nativePort = null;
       }

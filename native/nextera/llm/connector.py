@@ -63,8 +63,8 @@ class GroqConnector(object):
         if response_schema is not None:
             payload["response_format"] = {"type": "json_object"}
 
-        max_retries = 5
-        base_delay = 10
+        max_retries = 6
+        base_delay = 8
 
         for attempt in range(max_retries):
             try:
@@ -75,7 +75,7 @@ class GroqConnector(object):
                         "Content-Type": "application/json",
                     },
                     json=payload,
-                    timeout=120.0
+                    timeout=180.0
                 )
 
                 if response.status_code == 429:
@@ -106,7 +106,8 @@ class GroqConnector(object):
                 )
                 if is_retryable and attempt < max_retries - 1:
                     delay = base_delay * (2 ** attempt)
-                    logger.warning(f"Groq API busy/rate-limited. Retry {attempt + 1}/{max_retries} in {delay}s...")
+                    delay = min(delay, 60)
+                    logger.warning(f"Groq busy/rate-limited. Retry {attempt + 1}/{max_retries} in {delay}s...")
                     time.sleep(delay)
                     continue
                 logger.error(f"Groq error: {error_str}")
@@ -158,7 +159,7 @@ class GeminiConnector(object):
                 )
                 if is_retryable and attempt < max_retries - 1:
                     delay = base_delay * (2 ** attempt)
-                    logger.warning(f"Gemini API busy. Retry {attempt + 1}/{max_retries} in {delay}s...")
+                    logger.warning(f"Gemini busy. Retry {attempt + 1}/{max_retries} in {delay}s...")
                     time.sleep(delay)
                     continue
                 raise

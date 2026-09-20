@@ -2,10 +2,16 @@
 from pydantic import BaseModel
 from typing import List, Optional, Any, Literal, get_origin
 
+# EXPANDED whitelist — includes text, numeric, and regex question types
 WHITELISTED_QUESTION_TYPES = [
     "Submission_CheckboxQuestion",
     "Submission_MultipleChoiceQuestion",
-    "Submission_TextReflectQuestion"
+    "Submission_TextReflectQuestion",
+    "Submission_PlainTextQuestion",           # NEW — text fill-in-the-blank
+    "Submission_TextExactMatchQuestion",      # NEW — exact text answer
+    "Submission_NumericQuestion",             # NEW — numeric input
+    "Submission_MathQuestion",                # NEW — math formula
+    "Submission_RegexQuestion",               # NEW — regex patterns
 ]
 
 
@@ -70,7 +76,7 @@ class Submission_MultipleFillableBlanksQuestion(BaseModel):
 
 
 class Submission_NumericQuestion(BaseModel):
-    answer: str = "0"  # Default numeric answer
+    answer: str = ""  # No default "0" — force actual answer
 
 
 class Submission_PlainTextQuestion(BaseModel):
@@ -78,7 +84,7 @@ class Submission_PlainTextQuestion(BaseModel):
 
 
 class Submission_RegexQuestion(BaseModel):
-    answer: str = ".*"  # Default regex that matches anything
+    answer: Optional[str] = None
 
 
 class Submission_RichTextInput(BaseModel):
@@ -125,7 +131,6 @@ MODEL_MAP = {
 }
 
 
-# Bad recursive function
 def deep_blank_model(model_cls):
     data = {}
     for name, field in model_cls.model_fields.items():
