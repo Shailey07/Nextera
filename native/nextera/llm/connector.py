@@ -1,16 +1,16 @@
 import json
 import time
+import re
 import httpx
 from ..config import (GROQ_API_URL, GROQ_API_KEY, GROQ_MODEL,
                       GEMINI_API_KEY, GEMINI_MODEL)
 from pydantic import BaseModel
-from typing import Any, List, Literal, Optional
+from typing import Any, List, Optional
 from loguru import logger
 
 
 class ResponseFormat(BaseModel):
     question_id: str
-    question_type: Literal["MULTIPLE_CHOICE", "CHECKBOX", "TEXT_REFLECT"]
     chosen: Optional[List[str]] = None
     answer: Optional[str] = None
 
@@ -22,12 +22,47 @@ class ResponseList(BaseModel):
 DEFAULT_RESPONSE_SCHEMA = ResponseList.model_json_schema()
 
 
+def _parse_json_response(content: str) -> dict:
+    """Robustly parse JSON from LLM response."""
+    content = content.strip()
+
+    if content.startswith("```"):
+        parts = content.split("```")
+        if len(parts) >= 2:
+            content = parts[1]
+            if content.startswith("json"):
+                content = content[4:]
+            content = content.strip()
+
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        logger.warning("Direct JSON parse failed, trying repair...")
+
+    json_match = re.search(r'\{.*\}', content, re.DOTALL)
+    if json_match:
+        try:
+            return json.loads(json_match.group(0))
+        except json.JSONDecodeError:
+            pass
+
+    repaired = content.replace("'", '"').replace("True", "true").replace("False", "false")
+    repaired = re.sub(r',\s*([}\]])', r'\1', repaired)
+    try:
+        return json.loads(repaired)
+    except json.JSONDecodeError:
+        pass
+
+    logger.error(f"JSON parse failed. Content: {content[:500]}")
+    raise ValueError("Could not parse LLM JSON response")
+
+
 class GroqConnector(object):
-    """Groq API — OpenAI-compatible, 14,400 requests/day free."""
+    """Groq API — with Gemini fallback."""
 
     def __init__(self):
         if not GROQ_API_KEY:
-            raise RuntimeError("No Groq API key. Add groq_api_key to ~/.nextera/config.json")
+            raise RuntimeError("No Groq API key.")
         self.api_key = GROQ_API_KEY
         self.model = GROQ_MODEL
         self.api_url = GROQ_API_URL
@@ -38,7 +73,7 @@ class GroqConnector(object):
             system_prompt: str,
             response_schema: dict[str, Any] | None = None
     ) -> dict | str:
-        logger.debug(f"Making an API request to Groq ({self.model})...")
+        logger.debug(f"Groq request ({self.model})...")
 
         user_content = json.dumps(prompt) if isinstance(prompt, dict) else prompt
 
@@ -63,8 +98,9 @@ class GroqConnector(object):
         if response_schema is not None:
             payload["response_format"] = {"type": "json_object"}
 
-        max_retries = 6
-        base_delay = 8
+        max_retries = 2
+        base_delay = 2
+        last_error = None
 
         for attempt in range(max_retries):
             try:
@@ -75,49 +111,64 @@ class GroqConnector(object):
                         "Content-Type": "application/json",
                     },
                     json=payload,
-                    timeout=180.0
+                    timeout=60.0  # 20s → 60s (bade batch ke liye)
                 )
 
+                logger.debug(f"Groq status: {response.status_code}")
+
                 if response.status_code == 429:
-                    raise Exception("429 rate limit exceeded")
+                    logger.warning("Groq 429 rate limit")
+                    raise Exception("429 rate limit")
+
                 if response.status_code >= 500:
                     raise Exception(f"{response.status_code} server error")
 
-                response.raise_for_status()
+                if response.status_code >= 400:
+                    logger.error(f"Groq client error {response.status_code}: {response.text[:300]}")
+                    raise Exception(f"{response.status_code} client error")
+
                 data = response.json()
+
+                if "choices" not in data or not data["choices"]:
+                    logger.error(f"Groq returned no choices: {json.dumps(data)[:500]}")
+                    raise Exception("No choices in response")
+
                 content = data["choices"][0]["message"]["content"]
+                logger.debug(f"Groq content length: {len(content)}")
 
                 if response_schema is not None:
-                    content = content.strip()
-                    if content.startswith("```"):
-                        content = content.split("```")[1]
-                        if content.startswith("json"):
-                            content = content[4:]
-                        content = content.strip()
-                    return json.loads(content)
+                    return _parse_json_response(content)
                 return content.strip()
 
             except Exception as e:
+                last_error = e
                 error_str = str(e)
-                is_retryable = (
-                    "429" in error_str or "rate limit" in error_str.lower()
-                    or "503" in error_str or "500" in error_str
-                    or "timeout" in error_str.lower()
-                )
-                if is_retryable and attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
-                    delay = min(delay, 60)
-                    logger.warning(f"Groq busy/rate-limited. Retry {attempt + 1}/{max_retries} in {delay}s...")
+                logger.error(f"Groq attempt {attempt + 1}/{max_retries} failed: {error_str}")
+
+                if attempt < max_retries - 1:
+                    delay = base_delay * (attempt + 1)
+                    logger.warning(f"Retrying in {delay}s...")
                     time.sleep(delay)
                     continue
-                logger.error(f"Groq error: {error_str}")
-                raise
+
+        # Try Gemini fallback
+        if GEMINI_API_KEY:
+            logger.warning(f"Groq failed — trying Gemini fallback")
+            try:
+                return GeminiConnector().get_response(prompt, system_prompt, response_schema)
+            except Exception as gemini_err:
+                logger.error(f"Gemini fallback also failed: {gemini_err}")
+
+        logger.error(f"All LLM providers failed: {last_error}")
+        raise last_error or Exception("LLM failed")
 
 
 class GeminiConnector(object):
+    """Gemini API — fallback."""
+
     def __init__(self):
         if not GEMINI_API_KEY:
-            raise RuntimeError("No Gemini API key. Add gemini_api_key to ~/.nextera/config.json")
+            raise RuntimeError("No Gemini API key.")
         from google import genai
         self.client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -129,7 +180,7 @@ class GeminiConnector(object):
     ) -> dict | str:
         from google.genai import types
 
-        logger.debug(f"Making an API request to Gemini ({GEMINI_MODEL})...")
+        logger.debug(f"Gemini request ({GEMINI_MODEL})...")
         config_args = {"system_instruction": system_prompt}
         if response_schema is not None:
             config_args["response_schema"] = response_schema
@@ -137,46 +188,57 @@ class GeminiConnector(object):
 
         config = types.GenerateContentConfig(**config_args)
 
-        max_retries = 5
-        base_delay = 3
+        max_retries = 2
+        base_delay = 2
+        last_error = None
 
         for attempt in range(max_retries):
             try:
+                contents = self._build_contents(prompt)
                 response = self.client.models.generate_content(
                     model=GEMINI_MODEL,
-                    contents=json.dumps(prompt) if isinstance(prompt, dict) else prompt,
+                    contents=contents,
                     config=config
                 )
                 raw_text = response.candidates[0].content.parts[0].text
+                logger.debug(f"Gemini response length: {len(raw_text)}")
                 if response_schema is not None:
-                    return json.loads(raw_text)
+                    return _parse_json_response(raw_text)
                 return raw_text.strip()
             except Exception as e:
-                error_str = str(e)
-                is_retryable = (
-                    "503" in error_str or "UNAVAILABLE" in error_str
-                    or "429" in error_str or "high demand" in error_str
-                )
-                if is_retryable and attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
-                    logger.warning(f"Gemini busy. Retry {attempt + 1}/{max_retries} in {delay}s...")
-                    time.sleep(delay)
+                last_error = e
+                logger.error(f"Gemini attempt {attempt + 1}/{max_retries} failed: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(base_delay * (attempt + 1))
                     continue
                 raise
 
+        raise last_error or Exception("Gemini failed")
+
+    def _build_contents(self, prompt):
+        if isinstance(prompt, str):
+            return prompt
+        if isinstance(prompt, dict) and "images" in prompt:
+            parts = []
+            text_data = {k: v for k, v in prompt.items() if k != "images"}
+            parts.append(json.dumps(text_data))
+            for img in prompt["images"]:
+                if isinstance(img, dict) and "url" in img:
+                    parts.append({
+                        "inline_data": {
+                            "mime_type": img.get("mime_type", "image/png"),
+                            "data": img["data"]
+                        }
+                    })
+            return parts
+        return json.dumps(prompt)
+
 
 class PerplexityConnector(object):
-    """Deprecated — falls back to Groq/Gemini."""
-
-    def get_response(
-            self,
-            prompt: dict | str,
-            system_prompt: str,
-            response_schema: dict[str, Any] | None = None
-    ) -> dict | str:
+    def get_response(self, prompt, system_prompt, response_schema=None):
         logger.warning("Perplexity deprecated — falling back.")
-        if GROQ_API_KEY:
-            return GroqConnector().get_response(prompt, system_prompt, response_schema)
         if GEMINI_API_KEY:
             return GeminiConnector().get_response(prompt, system_prompt, response_schema)
+        if GROQ_API_KEY:
+            return GroqConnector().get_response(prompt, system_prompt, response_schema)
         raise RuntimeError("No LLM API key available.")

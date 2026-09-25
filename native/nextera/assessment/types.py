@@ -2,16 +2,19 @@
 from pydantic import BaseModel
 from typing import List, Optional, Any, Literal, get_origin
 
-# EXPANDED whitelist — includes text, numeric, and regex question types
+# EXPANDED whitelist
 WHITELISTED_QUESTION_TYPES = [
     "Submission_CheckboxQuestion",
     "Submission_MultipleChoiceQuestion",
     "Submission_TextReflectQuestion",
-    "Submission_PlainTextQuestion",           # NEW — text fill-in-the-blank
-    "Submission_TextExactMatchQuestion",      # NEW — exact text answer
-    "Submission_NumericQuestion",             # NEW — numeric input
-    "Submission_MathQuestion",                # NEW — math formula
-    "Submission_RegexQuestion",               # NEW — regex patterns
+    "Submission_PlainTextQuestion",
+    "Submission_TextExactMatchQuestion",
+    "Submission_NumericQuestion",
+    "Submission_MathQuestion",
+    "Submission_RegexQuestion",
+    "Submission_MultipleChoiceReflectQuestion",
+    "Submission_CheckboxReflectQuestion",
+    "Submission_MultipleFillableBlanksQuestion",
 ]
 
 
@@ -44,6 +47,10 @@ class Submission_CheckboxQuestion(BaseModel):
     chosen: Optional[List[str]] = None
 
 
+class Submission_CheckboxReflectQuestion(BaseModel):
+    chosen: Optional[List[str]] = None
+
+
 class Submission_CodeExpressionQuestion(BaseModel):
     answer: Optional[Submission_CodeInput] = None
 
@@ -62,6 +69,10 @@ class Submission_MultipleChoiceQuestion(BaseModel):
     chosen: Optional[str] = None
 
 
+class Submission_MultipleChoiceReflectQuestion(BaseModel):
+    chosen: Optional[str] = None
+
+
 class Submission_MultipleChoiceFillableBlank(BaseModel):
     id: Optional[str] = None
     optionId: Optional[str] = None
@@ -76,7 +87,7 @@ class Submission_MultipleFillableBlanksQuestion(BaseModel):
 
 
 class Submission_NumericQuestion(BaseModel):
-    answer: str = ""  # No default "0" — force actual answer
+    answer: str = ""
 
 
 class Submission_PlainTextQuestion(BaseModel):
@@ -115,10 +126,12 @@ class Submission_WidgetQuestion(BaseModel):
 
 MODEL_MAP = {
     "Submission_CheckboxQuestion": Submission_CheckboxQuestion,
+    "Submission_CheckboxReflectQuestion": Submission_CheckboxReflectQuestion,
     "Submission_CodeExpressionQuestion": Submission_CodeExpressionQuestion,
     "Submission_FileUploadQuestion": Submission_FileUploadQuestion,
     "Submission_MathQuestion": Submission_MathQuestion,
     "Submission_MultipleChoiceQuestion": Submission_MultipleChoiceQuestion,
+    "Submission_MultipleChoiceReflectQuestion": Submission_MultipleChoiceReflectQuestion,
     "Submission_MultipleFillableBlanksQuestion": Submission_MultipleFillableBlanksQuestion,
     "Submission_NumericQuestion": Submission_NumericQuestion,
     "Submission_PlainTextQuestion": Submission_PlainTextQuestion,
